@@ -2,6 +2,7 @@
 [![Build Status](https://travis-ci.org/eest/dohdns.svg?branch=master)](https://travis-ci.org/eest/dohdns)
 [![codecov](https://codecov.io/gh/eest/dohdns/branch/master/graph/badge.svg)](https://codecov.io/gh/eest/dohdns)
 [![Go Report Card](https://goreportcard.com/badge/github.com/eest/dohdns)](https://goreportcard.com/report/github.com/eest/dohdns)
+[![godoc](https://godoc.org/github.com/eest/dohdns?status.svg)](https://godoc.org/github.com/eest/dohdns)
 
 Basic experimental library for creating a DNS API server with Go.
 
