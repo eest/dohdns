@@ -1,4 +1,5 @@
 # dohdns: DNS over HTTPS (DOH) library
+[![Go Report Card](https://goreportcard.com/badge/github.com/eest/dohdns)](https://goreportcard.com/report/github.com/eest/dohdns)
 
 Basic experimental library for creating a DNS API server with Go.
 
