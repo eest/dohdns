@@ -12,7 +12,7 @@ func ExampleHandleRequest() {
 	keyFile := "server.key"
 
 	logger := log.New(os.Stdout, "", 0)
-	database, err := dohdns.NewProxy(nil, "", "")
+	database, err := dohdns.NewProxy(nil, "", "", nil)
 	if err != nil {
 		log.Fatal(err)
 	}

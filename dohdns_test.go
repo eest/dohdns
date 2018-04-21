@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"syscall"
 	"testing"
+	"time"
 )
 
 var requestTests = []struct {
@@ -28,6 +29,7 @@ var requestTests = []struct {
 	reqBodyError    bool
 	respContentType string
 	respBody        []byte
+	brokenExchange  bool
 }{
 	{
 		desc:            "GET with no 'dns' parameter",
@@ -81,6 +83,16 @@ var requestTests = []struct {
 		url:             "https://example.com?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB",
 		status:          http.StatusOK,
 		respContentType: "application/dns-udpwireformat",
+	},
+	{
+		desc:            "GET with valid www.example.com (A) where the Exchange function returns a broken DNS packet",
+		handler:         dohdns.HandleRequest,
+		method:          "GET",
+		url:             "https://example.com?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB",
+		status:          http.StatusInternalServerError,
+		respContentType: "text/plain; charset=utf-8",
+		respBody:        []byte("Internal Server Error\n"),
+		brokenExchange:  true,
 	},
 	{
 		desc:            "GET with valid www.example.com (A) query and custom backend port",
@@ -227,6 +239,15 @@ func (h *dnsRequestHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
+// We use this type to overwrite the Exchange method below.
+type brokenExchangeClient struct {
+	dns.Client
+}
+
+func (c *brokenExchangeClient) Exchange(m *dns.Msg, address string) (*dns.Msg, time.Duration, error) {
+	return &dns.Msg{MsgHdr: dns.MsgHdr{Rcode: -1}}, 0, nil
+}
+
 func TestRequests(t *testing.T) {
 
 	// Start up an internal DNS server for test queries.
@@ -250,19 +271,40 @@ func TestRequests(t *testing.T) {
 	// Wait until DNS server is ready to serve requests before continuing.
 	<-dnsServerReady
 
-	// Direct DNS queries to our local test DNS server.
-	database, err := dohdns.NewProxy([]string{internalDNSAddr}, internalDNSPort, "")
-	if err != nil {
-		t.Errorf(
-			"TestRequest: failed calling NewProxy: %s",
-			err,
-		)
-	}
-
 	// Create a silent logger to got more complete test coverage.
 	logger := log.New(ioutil.Discard, "", 0)
 
 	for _, test := range requestTests {
+
+		// Direct DNS queries to our local test DNS server.
+		var database *dohdns.ProxyBackend
+		var err error
+
+		if test.brokenExchange {
+			database, err = dohdns.NewProxy(
+				[]string{internalDNSAddr},
+				internalDNSPort,
+				"",
+				&brokenExchangeClient{},
+			)
+			if err != nil {
+				t.Errorf(
+					"%s: unable to instantiate brokenExchangeClient NewProxy: %s",
+					test.desc,
+					err,
+				)
+			}
+		} else {
+			database, err = dohdns.NewProxy([]string{internalDNSAddr}, internalDNSPort, "", nil)
+			if err != nil {
+				t.Errorf(
+					"%s: unable to instantiate default NewProxy: %s",
+					test.desc,
+					err,
+				)
+			}
+		}
+
 		var req *http.Request
 		switch test.method {
 		case "POST":
@@ -337,6 +379,7 @@ var newProxyTests = []struct {
 	resolvconf string
 	err        error
 	database   *dohdns.ProxyBackend
+	exchanger  *dohdns.Exchanger
 }{
 	{
 		desc:       "Default settings",
@@ -360,7 +403,6 @@ func TestNewProxy(t *testing.T) {
 	// For the default case when no servers are supplied we
 	// need to parse /etc/resolv.conf to know what should
 	// exist in the resulting struct.
-
 	clientConfig, err := dns.ClientConfigFromFile("/etc/resolv.conf")
 	if err != nil {
 		t.Fatalf(
@@ -370,7 +412,7 @@ func TestNewProxy(t *testing.T) {
 	}
 
 	for _, test := range newProxyTests {
-		database, err := dohdns.NewProxy(test.servers, test.port, test.resolvconf)
+		database, err := dohdns.NewProxy(test.servers, test.port, test.resolvconf, nil)
 
 		// If test.servers is not defined and there was no error
 		// calling NewProxy we need to update the expected database
@@ -383,6 +425,12 @@ func TestNewProxy(t *testing.T) {
 		// we expect the default to be "53"
 		if test.port == "" && err == nil {
 			test.database.Port = "53"
+		}
+
+		// If exchanger is not set and there was no error calling NewProxy
+		// we expect the default to be a normal dns.Client pointer.
+		if test.exchanger == nil && err == nil {
+			test.database.Exchanger = new(dns.Client)
 		}
 
 		if !reflect.DeepEqual(err, test.err) {
